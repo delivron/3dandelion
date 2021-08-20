@@ -26,7 +26,7 @@ HWND CreateDefaultWindow(HINSTANCE instance, const std::wstring& class_name, con
     const int screen_height = GetSystemMetrics(SM_CYSCREEN);
 
     RECT window_rect = { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
-    AdjustWindowRect(&window_rect, WS_OVERLAPPEDWINDOW, FALSE);
+    AdjustWindowRect(&window_rect, WS_OVERLAPPEDWINDOW, false);
 
     int window_width = window_rect.right - window_rect.left;
     int window_height = window_rect.bottom - window_rect.top;
@@ -56,6 +56,8 @@ namespace ddn
 {
 
 Window::Window(const std::wstring& title, uint32_t width, uint32_t height)
+    : m_width(width)
+    , m_height(height)
 {
     const HINSTANCE instance = GetModuleHandleW(nullptr);
     const std::wstring class_name = L"DandelionWindowClass";
@@ -68,9 +70,24 @@ HWND Window::GetHandle() const
     return m_handle;
 }
 
+uint32_t Window::GetWidth() const
+{
+    return m_width;
+}
+
+uint32_t Window::GetHeight() const
+{
+    return m_height;
+}
+
 void Window::Show()
 {
     ShowWindow(m_handle, SW_SHOWDEFAULT);
+}
+
+void Window::Hide()
+{
+    ShowWindow(m_handle, SW_HIDE);
 }
 
 }  // namespace ddn
