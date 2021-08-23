@@ -4,6 +4,9 @@ project(3Dandelion LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 
+set(EXTERNAL_DIR ${PROJECT_SOURCE_DIR}/external)
+
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+add_subdirectory(external)
 add_subdirectory(source)

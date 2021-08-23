@@ -6,7 +6,13 @@ add_executable(${TARGET}
     window.cpp
 )
 
+target_include_directories(${TARGET}
+    PUBLIC
+        ${EXTERNAL_DIR}/directx-headers/include/directx
+)
+
 target_link_libraries(${TARGET}
-    dxgi.lib
-    d3d12.lib
+    PRIVATE
+        dxgi.lib
+        d3d12.lib
 )
