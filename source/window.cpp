@@ -2,67 +2,14 @@
 
 #include <cassert>
 
-namespace
-{
-
-ATOM RegisterWindowClass(HINSTANCE instance, const std::wstring& class_name)
-{
-    WNDCLASSEXW window_class = {};
-    window_class.cbSize = sizeof(WNDCLASSEXW);
-    window_class.style = CS_HREDRAW | CS_VREDRAW;
-    window_class.lpfnWndProc = &DefWindowProcW;
-    window_class.hInstance = instance;
-    window_class.hCursor = LoadCursor(NULL, IDC_ARROW);
-    window_class.lpszClassName = class_name.c_str();
-
-    ATOM id = RegisterClassExW(&window_class);
-    assert(id && "Failed to register window class");
-    return id;
-}
-
-HWND CreateDefaultWindow(HINSTANCE instance, const std::wstring& class_name, const std::wstring& title, uint32_t width, uint32_t height)
-{
-    const int screen_width = GetSystemMetrics(SM_CXSCREEN);
-    const int screen_height = GetSystemMetrics(SM_CYSCREEN);
-
-    RECT window_rect = { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
-    AdjustWindowRect(&window_rect, WS_OVERLAPPEDWINDOW, false);
-
-    int window_width = window_rect.right - window_rect.left;
-    int window_height = window_rect.bottom - window_rect.top;
-    int window_x = std::max<int>(0, (screen_width - window_width) / 2);
-    int window_y = std::max<int>(0, (screen_height - window_height) / 2);
-
-    HWND hwnd = CreateWindowW(
-        class_name.c_str(),
-        title.c_str(),
-        WS_OVERLAPPEDWINDOW,
-        window_x,
-        window_y,
-        window_width,
-        window_height,
-        nullptr,
-        nullptr,
-        instance,
-        nullptr
-    );
-    assert(hwnd && "Failed to create window");
-    return hwnd;
-}
-
-}  // namespace
-
 namespace ddn
 {
 
 Window::Window(const std::wstring& title, uint32_t width, uint32_t height)
     : m_width(width)
     , m_height(height)
+    , m_handle(Create(title, width, height))
 {
-    const HINSTANCE instance = GetModuleHandleW(nullptr);
-    const std::wstring class_name = L"DandelionWindowClass";
-    RegisterWindowClass(instance, class_name);
-    m_handle = CreateDefaultWindow(instance, class_name, title, width, height);
 }
 
 HWND Window::GetHandle() const
@@ -88,6 +35,123 @@ void Window::Show()
 void Window::Hide()
 {
     ShowWindow(m_handle, SW_HIDE);
+}
+
+void Window::Subscribe(IWindowListener* listener)
+{
+    m_listener.store(listener);
+}
+
+void Window::Unsubscribe()
+{
+    m_listener.store(nullptr);
+}
+
+std::wstring Window::Register()
+{
+    const auto id = reinterpret_cast<std::uintptr_t>(this);
+    const std::wstring class_name = L"DandelionWindowClass" + std::to_wstring(id);
+
+    WNDCLASSEXW window_class = {};
+    window_class.cbSize = sizeof(WNDCLASSEXW);
+    window_class.style = CS_HREDRAW | CS_VREDRAW;
+    window_class.lpfnWndProc = &ProcessMessage;
+    window_class.hInstance = GetModuleHandleW(nullptr);
+    window_class.hCursor = LoadCursor(NULL, IDC_ARROW);
+    window_class.lpszClassName = class_name.c_str();
+    RegisterClassExW(&window_class);
+
+    return class_name;
+}
+
+HWND Window::Create(const std::wstring& title, uint32_t width, uint32_t height)
+{
+    const int screen_width = GetSystemMetrics(SM_CXSCREEN);
+    const int screen_height = GetSystemMetrics(SM_CYSCREEN);
+
+    RECT window_rect = { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
+    AdjustWindowRect(&window_rect, WS_OVERLAPPEDWINDOW, false);
+
+    int window_width = window_rect.right - window_rect.left;
+    int window_height = window_rect.bottom - window_rect.top;
+    int window_x = std::max<int>(0, (screen_width - window_width) / 2);
+    int window_y = std::max<int>(0, (screen_height - window_height) / 2);
+
+    const HINSTANCE instance = GetModuleHandleW(nullptr);
+    const std::wstring class_name = Register();
+    HWND hwnd = CreateWindowW(
+        class_name.c_str(),
+        title.c_str(),
+        WS_OVERLAPPEDWINDOW,
+        window_x,
+        window_y,
+        window_width,
+        window_height,
+        nullptr,
+        nullptr,
+        instance,
+        this
+    );
+    assert(hwnd && "Failed to create window");
+    return hwnd;
+}
+
+bool Window::OnMessage(UINT message, WPARAM w_param, LPARAM l_param)
+{
+    IWindowListener* listener = m_listener.load();
+    if (!listener) {
+        return false;
+    }
+
+    switch (message)
+    {
+    case WM_SIZE:
+    {
+        RECT client_rect = {};
+        GetClientRect(m_handle, &client_rect);
+        m_width = client_rect.right - client_rect.left;
+        m_height = client_rect.bottom - client_rect.top;
+        listener->OnResize(m_width, m_height);
+        break;
+    }
+    case WM_PAINT:
+    {
+        listener->OnUpdate();
+        break;
+    }
+    case WM_DESTROY:
+    {
+        listener->OnDestroy();
+        PostQuitMessage(0);
+        break;
+    }
+    default:
+        return false;
+    }
+
+    return true;
+}
+
+LRESULT CALLBACK Window::ProcessMessage(HWND handle, UINT message, WPARAM w_param, LPARAM l_param)
+{
+    if (message == WM_CREATE) {
+        LPCREATESTRUCT creation_desc = reinterpret_cast<LPCREATESTRUCT>(l_param);
+        SetWindowLongPtrW(handle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(creation_desc->lpCreateParams));
+        return 0;
+    }
+
+    LONG_PTR ptr = GetWindowLongPtrW(handle, GWLP_USERDATA);
+    auto* window = reinterpret_cast<Window*>(ptr);
+    if (!window) {
+        return DefWindowProcW(handle, message, w_param, l_param);
+    }
+
+    bool is_processed= window->OnMessage(message, w_param, l_param);
+    if (is_processed) {
+        return 0;
+    }
+
+    return DefWindowProcW(handle, message, w_param, l_param);
 }
 
 }  // namespace ddn
