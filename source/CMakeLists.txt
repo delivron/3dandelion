@@ -16,3 +16,9 @@ target_link_libraries(${TARGET}
         dxgi.lib
         d3d12.lib
 )
+
+target_compile_definitions(${TARGET}
+    PRIVATE
+        UNICODE
+        _UNICODE
+)

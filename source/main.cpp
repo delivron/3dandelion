@@ -84,9 +84,9 @@ int main()
 
     MSG msg = {};
     while (msg.message != WM_QUIT) {
-        if (PeekMessageW(&msg, window_handle, 0, 0, PM_REMOVE)) {
+        if (PeekMessage(&msg, window_handle, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+            DispatchMessage(&msg);
         }
     }
 

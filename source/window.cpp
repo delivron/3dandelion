@@ -56,10 +56,10 @@ std::wstring Window::Register()
     window_class.cbSize = sizeof(WNDCLASSEXW);
     window_class.style = CS_HREDRAW | CS_VREDRAW;
     window_class.lpfnWndProc = &ProcessMessage;
-    window_class.hInstance = GetModuleHandleW(nullptr);
+    window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hCursor = LoadCursor(NULL, IDC_ARROW);
     window_class.lpszClassName = class_name.c_str();
-    RegisterClassExW(&window_class);
+    RegisterClassEx(&window_class);
 
     return class_name;
 }
@@ -77,9 +77,9 @@ HWND Window::Create(const std::wstring& title, uint32_t width, uint32_t height)
     int window_x = std::max<int>(0, (screen_width - window_width) / 2);
     int window_y = std::max<int>(0, (screen_height - window_height) / 2);
 
-    const HINSTANCE instance = GetModuleHandleW(nullptr);
+    const HINSTANCE instance = GetModuleHandle(nullptr);
     const std::wstring class_name = Register();
-    HWND hwnd = CreateWindowW(
+    HWND hwnd = CreateWindow(
         class_name.c_str(),
         title.c_str(),
         WS_OVERLAPPEDWINDOW,
@@ -136,14 +136,14 @@ LRESULT CALLBACK Window::ProcessMessage(HWND handle, UINT message, WPARAM w_para
 {
     if (message == WM_CREATE) {
         LPCREATESTRUCT creation_desc = reinterpret_cast<LPCREATESTRUCT>(l_param);
-        SetWindowLongPtrW(handle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(creation_desc->lpCreateParams));
+        SetWindowLongPtr(handle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(creation_desc->lpCreateParams));
         return 0;
     }
 
-    LONG_PTR ptr = GetWindowLongPtrW(handle, GWLP_USERDATA);
+    LONG_PTR ptr = GetWindowLongPtr(handle, GWLP_USERDATA);
     auto* window = reinterpret_cast<Window*>(ptr);
     if (!window) {
-        return DefWindowProcW(handle, message, w_param, l_param);
+        return DefWindowProc(handle, message, w_param, l_param);
     }
 
     bool is_processed= window->OnMessage(message, w_param, l_param);
@@ -151,7 +151,7 @@ LRESULT CALLBACK Window::ProcessMessage(HWND handle, UINT message, WPARAM w_para
         return 0;
     }
 
-    return DefWindowProcW(handle, message, w_param, l_param);
+    return DefWindowProc(handle, message, w_param, l_param);
 }
 
 }  // namespace ddn
