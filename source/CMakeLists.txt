@@ -4,6 +4,8 @@ add_executable(${TARGET}
     main.cpp
     window.h
     window.cpp
+    application.h
+    application.cpp
 )
 
 target_include_directories(${TARGET}

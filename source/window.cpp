@@ -55,7 +55,7 @@ std::wstring Window::Register()
     WNDCLASSEXW window_class = {};
     window_class.cbSize = sizeof(WNDCLASSEXW);
     window_class.style = CS_HREDRAW | CS_VREDRAW;
-    window_class.lpfnWndProc = &ProcessMessage;
+    window_class.lpfnWndProc = &OnMessage;
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hCursor = LoadCursor(NULL, IDC_ARROW);
     window_class.lpszClassName = class_name.c_str();
@@ -96,11 +96,12 @@ HWND Window::Create(const std::wstring& title, uint32_t width, uint32_t height)
     return hwnd;
 }
 
-bool Window::OnMessage(UINT message, WPARAM w_param, LPARAM l_param)
+bool Window::ProcessMessage(UINT message, WPARAM w_param, LPARAM l_param)
 {
+    IWindowListener default_listener = {};
     IWindowListener* listener = m_listener.load();
     if (!listener) {
-        return false;
+        listener = &default_listener;
     }
 
     switch (message)
@@ -132,7 +133,7 @@ bool Window::OnMessage(UINT message, WPARAM w_param, LPARAM l_param)
     return true;
 }
 
-LRESULT CALLBACK Window::ProcessMessage(HWND handle, UINT message, WPARAM w_param, LPARAM l_param)
+LRESULT CALLBACK Window::OnMessage(HWND handle, UINT message, WPARAM w_param, LPARAM l_param)
 {
     if (message == WM_CREATE) {
         LPCREATESTRUCT creation_desc = reinterpret_cast<LPCREATESTRUCT>(l_param);
@@ -146,7 +147,7 @@ LRESULT CALLBACK Window::ProcessMessage(HWND handle, UINT message, WPARAM w_para
         return DefWindowProc(handle, message, w_param, l_param);
     }
 
-    bool is_processed= window->OnMessage(message, w_param, l_param);
+    bool is_processed= window->ProcessMessage(message, w_param, l_param);
     if (is_processed) {
         return 0;
     }
