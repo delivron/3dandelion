@@ -21,6 +21,7 @@ target_link_libraries(${TARGET}
 
 target_compile_definitions(${TARGET}
     PRIVATE
-        UNICODE
         _UNICODE
+        UNICODE
+        NOMINMAX
 )

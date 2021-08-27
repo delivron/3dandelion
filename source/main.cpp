@@ -7,6 +7,7 @@
 
 #include <array>
 #include <stdexcept>
+#include <algorithm>
 
 using namespace Microsoft::WRL;
 
@@ -55,21 +56,31 @@ public:
 
         m_rtv_descriptor_size = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-        CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle(m_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
-        for (UINT i = 0; i < s_back_buffer_count; ++i) {
-            ThrowIfFailed(m_swap_chain->GetBuffer(i, IID_PPV_ARGS(&m_back_buffers[i])));
-            m_device->CreateRenderTargetView(m_back_buffers[i].Get(), nullptr, rtv_handle);
-            rtv_handle.Offset(1, m_rtv_descriptor_size);
-        }
+        UpdateBackBufferViews();
 
         ThrowIfFailed(m_device->CreateFence(m_fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
 
         m_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     }
 
-    void OnResize(uint32_t /*width*/, uint32_t /*height*/) override
+    void OnResize(uint32_t width, uint32_t height) override
     {
-        // TODO: Resize swap chain buffers
+        WaitForGpu();
+
+        width = std::max<uint32_t>(1, width);
+        height = std::max<uint32_t>(1, height);
+
+        for (auto& back_buffer : m_back_buffers) {
+            back_buffer.Reset();
+        }
+
+        DXGI_SWAP_CHAIN_DESC1 swap_chian_desc = {};
+        ThrowIfFailed(m_swap_chain->GetDesc1(&swap_chian_desc));
+        ThrowIfFailed(m_swap_chain->ResizeBuffers(swap_chian_desc.BufferCount, width, height, swap_chian_desc.Format, swap_chian_desc.Flags));
+
+        UpdateBackBufferViews();
+
+        m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
     }
 
     void OnUpdate() override
@@ -117,6 +128,16 @@ private:
         }
 
         m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
+    }
+
+    void UpdateBackBufferViews()
+    {
+        CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle(m_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
+        for (UINT i = 0; i < s_back_buffer_count; ++i) {
+            ThrowIfFailed(m_swap_chain->GetBuffer(i, IID_PPV_ARGS(&m_back_buffers[i])));
+            m_device->CreateRenderTargetView(m_back_buffers[i].Get(), nullptr, rtv_handle);
+            rtv_handle.Offset(1, m_rtv_descriptor_size);
+        }
     }
 
 private:
