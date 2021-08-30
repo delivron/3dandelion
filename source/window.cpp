@@ -6,10 +6,18 @@ namespace ddn
 {
 
 Window::Window(const std::wstring& title, uint32_t width, uint32_t height)
-    : m_width(width)
+    : m_window_class_name(L"DandelionWindowClass" + std::to_wstring(reinterpret_cast<std::uintptr_t>(this)))
+    , m_width(width)
     , m_height(height)
     , m_handle(Create(title, width, height))
 {
+}
+
+Window::~Window()
+{
+    const HINSTANCE instance = GetModuleHandle(nullptr);
+    UnregisterClass(m_window_class_name.c_str(), instance);
+    DestroyWindow(m_handle);
 }
 
 HWND Window::GetHandle() const
@@ -47,23 +55,6 @@ void Window::Unsubscribe()
     m_listener.store(nullptr);
 }
 
-std::wstring Window::Register()
-{
-    const auto id = reinterpret_cast<std::uintptr_t>(this);
-    const std::wstring class_name = L"DandelionWindowClass" + std::to_wstring(id);
-
-    WNDCLASSEXW window_class = {};
-    window_class.cbSize = sizeof(WNDCLASSEXW);
-    window_class.style = CS_HREDRAW | CS_VREDRAW;
-    window_class.lpfnWndProc = &OnMessage;
-    window_class.hInstance = GetModuleHandle(nullptr);
-    window_class.hCursor = LoadCursor(NULL, IDC_ARROW);
-    window_class.lpszClassName = class_name.c_str();
-    RegisterClassEx(&window_class);
-
-    return class_name;
-}
-
 HWND Window::Create(const std::wstring& title, uint32_t width, uint32_t height)
 {
     const int screen_width = GetSystemMetrics(SM_CXSCREEN);
@@ -78,9 +69,17 @@ HWND Window::Create(const std::wstring& title, uint32_t width, uint32_t height)
     int window_y = std::max<int>(0, (screen_height - window_height) / 2);
 
     const HINSTANCE instance = GetModuleHandle(nullptr);
-    const std::wstring class_name = Register();
+    WNDCLASSEXW window_class = {};
+    window_class.cbSize = sizeof(WNDCLASSEXW);
+    window_class.style = CS_HREDRAW | CS_VREDRAW;
+    window_class.lpfnWndProc = &OnMessage;
+    window_class.hInstance = instance;
+    window_class.hCursor = LoadCursor(NULL, IDC_ARROW);
+    window_class.lpszClassName = m_window_class_name.c_str();
+    RegisterClassEx(&window_class);
+
     HWND hwnd = CreateWindow(
-        class_name.c_str(),
+        m_window_class_name.c_str(),
         title.c_str(),
         WS_OVERLAPPEDWINDOW,
         window_x,
