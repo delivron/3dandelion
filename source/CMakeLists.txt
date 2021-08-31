@@ -17,6 +17,7 @@ target_link_libraries(${TARGET}
     PRIVATE
         dxgi.lib
         d3d12.lib
+        d3dcompiler.lib
 )
 
 target_compile_definitions(${TARGET}
