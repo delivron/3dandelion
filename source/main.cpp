@@ -52,6 +52,7 @@ public:
         InitRootSignature();
         InitGraphicsPipelineState();
         InitFence();
+        InitVertexBuffer();
     }
 
     void OnResize(uint32_t width, uint32_t height) override
@@ -81,12 +82,28 @@ public:
         ThrowIfFailed(m_command_allocator->Reset());
         ThrowIfFailed(m_command_list->Reset(m_command_allocator.Get(), m_pipeline_state.Get()));
 
+        const ddn::Window& window = GetWindow();
+        const uint32_t width = window.GetWidth();
+        const uint32_t height = window.GetHeight();
+
+        D3D12_VIEWPORT viewport = { 0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height) };
+        m_command_list->RSSetViewports(1, &viewport);
+
+        D3D12_RECT scissor_rect = { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
+        m_command_list->RSSetScissorRects(1, &scissor_rect);
+
         auto barrier1 = CD3DX12_RESOURCE_BARRIER::Transition(back_buffer.Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
         m_command_list->ResourceBarrier(1, &barrier1);
 
         const float color[4] = { 0.96f,  0.96f, 0.98f, 1.0f };
         CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle(m_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), m_buffer_index, m_rtv_descriptor_size);
         m_command_list->ClearRenderTargetView(rtv_handle, color, 0, nullptr);
+
+        m_command_list->SetGraphicsRootSignature(m_root_signature.Get());
+        m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        m_command_list->IASetVertexBuffers(0, 1, &m_vertex_buffer_view);
+        m_command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, nullptr);
+        m_command_list->DrawInstanced(3, 1, 0, 0);
 
         auto barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(back_buffer.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
         m_command_list->ResourceBarrier(1, &barrier2);
@@ -180,6 +197,7 @@ private:
         desc.VS = CD3DX12_SHADER_BYTECODE(vertex_shader.Get());
         desc.PS = CD3DX12_SHADER_BYTECODE(pixel_shader.Get());
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        desc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
         desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         desc.InputLayout = { &input_desc, 1 };
         desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
@@ -193,6 +211,36 @@ private:
     {
         ThrowIfFailed(m_device->CreateFence(m_fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
         m_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    }
+
+    void InitVertexBuffer()
+    {
+        struct Vertex
+        {
+            float position[3];
+        };
+
+        std::array<Vertex, 3> vertices = {
+            Vertex{ 0.5f, -0.5f, 1.0f },
+            Vertex{ -0.5f, -0.5f, 1.0f },
+            Vertex{ 0.0f, 0.5f, 1.0f }
+        };
+
+        const size_t data_size = sizeof(vertices);
+
+        // TODO: use default heap type for vertex buffer
+        auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        auto resource_desc = CD3DX12_RESOURCE_DESC::Buffer(data_size);
+        ThrowIfFailed(m_device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_vertex_buffer)));
+
+        void* data = nullptr;
+        ThrowIfFailed(m_vertex_buffer->Map(0, &CD3DX12_RANGE(), &data));
+        std::copy(vertices.cbegin(), vertices.cend(), static_cast<Vertex*>(data));
+        m_vertex_buffer->Unmap(0, nullptr);
+
+        m_vertex_buffer_view.BufferLocation = m_vertex_buffer->GetGPUVirtualAddress();
+        m_vertex_buffer_view.SizeInBytes = data_size;
+        m_vertex_buffer_view.StrideInBytes = sizeof(Vertex);
     }
 
     void WaitForGpu()
@@ -242,6 +290,9 @@ private:
     ComPtr<ID3D12Fence> m_fence;
     uint64_t m_fence_value = 0;
     HANDLE m_event = nullptr;
+
+    ComPtr<ID3D12Resource> m_vertex_buffer;
+    D3D12_VERTEX_BUFFER_VIEW m_vertex_buffer_view = {};
 };
 
 int main()
