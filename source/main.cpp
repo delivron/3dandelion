@@ -116,6 +116,8 @@ public:
         ThrowIfFailed(m_swap_chain->Present(0, 0));
 
         WaitForGpu();
+
+        m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
     }
 
 private:
@@ -228,19 +230,34 @@ private:
 
         const size_t data_size = sizeof(vertices);
 
-        // TODO: use default heap type for vertex buffer
-        auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-        auto resource_desc = CD3DX12_RESOURCE_DESC::Buffer(data_size);
-        ThrowIfFailed(m_device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&m_vertex_buffer)));
+        ComPtr<ID3D12Resource> upload_resource;
+        auto upload_heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        auto upload_resource_desc = CD3DX12_RESOURCE_DESC::Buffer(data_size);
+        ThrowIfFailed(m_device->CreateCommittedResource(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_resource)));
 
         void* data = nullptr;
-        ThrowIfFailed(m_vertex_buffer->Map(0, &CD3DX12_RANGE(), &data));
+        ThrowIfFailed(upload_resource->Map(0, &CD3DX12_RANGE(), &data));
         std::copy(vertices.cbegin(), vertices.cend(), static_cast<Vertex*>(data));
-        m_vertex_buffer->Unmap(0, nullptr);
+        upload_resource->Unmap(0, nullptr);
+
+        auto gpu_heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        auto gpu_resource_desc = CD3DX12_RESOURCE_DESC::Buffer(data_size);
+        ThrowIfFailed(m_device->CreateCommittedResource(&gpu_heap_properties, D3D12_HEAP_FLAG_NONE, &gpu_resource_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_vertex_buffer)));
 
         m_vertex_buffer_view.BufferLocation = m_vertex_buffer->GetGPUVirtualAddress();
         m_vertex_buffer_view.SizeInBytes = data_size;
         m_vertex_buffer_view.StrideInBytes = sizeof(Vertex);
+
+        m_command_list->Reset(m_command_allocator.Get(), nullptr);
+        m_command_list->CopyResource(m_vertex_buffer.Get(), upload_resource.Get());
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_vertex_buffer.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+        m_command_list->ResourceBarrier(1, &barrier);
+        m_command_list->Close();
+
+        ID3D12CommandList* command_lists[] = { m_command_list.Get() };
+        m_queue->ExecuteCommandLists(static_cast<UINT>(std::size(command_lists)), command_lists);
+
+        WaitForGpu();
     }
 
     void WaitForGpu()
@@ -253,8 +270,6 @@ private:
             ThrowIfFailed(m_fence->SetEventOnCompletion(m_fence_value, m_event));
             WaitForSingleObject(m_event, INFINITE);
         }
-
-        m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
     }
 
     void UpdateBackBufferViews()
