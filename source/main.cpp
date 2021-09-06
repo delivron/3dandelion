@@ -55,9 +55,16 @@ public:
         InitVertexBuffer();
     }
 
+    ~DandelionApp()
+    {
+        if (m_event && m_event != INVALID_HANDLE_VALUE) {
+            CloseHandle(m_event);
+        }
+    }
+
     void OnResize(uint32_t width, uint32_t height) override
     {
-        WaitForGpu();
+        Flush();
 
         width = std::max<uint32_t>(1, width);
         height = std::max<uint32_t>(1, height);
@@ -79,8 +86,9 @@ public:
     {
         ComPtr<ID3D12Resource> back_buffer = m_back_buffers[m_buffer_index];
 
-        ThrowIfFailed(m_command_allocator->Reset());
-        ThrowIfFailed(m_command_list->Reset(m_command_allocator.Get(), m_pipeline_state.Get()));
+        ID3D12CommandAllocator* command_allocator = m_command_allocators[m_buffer_index].Get();
+        ThrowIfFailed(command_allocator->Reset());
+        ThrowIfFailed(m_command_list->Reset(command_allocator, m_pipeline_state.Get()));
 
         const ddn::Window& window = GetWindow();
         const uint32_t width = window.GetWidth();
@@ -113,11 +121,17 @@ public:
         ID3D12CommandList* command_lists[] = { m_command_list.Get() };
         m_queue->ExecuteCommandLists(static_cast<UINT>(std::size(command_lists)), command_lists);
 
+        m_buffer_fence_values[m_buffer_index] = Signal();
+
         ThrowIfFailed(m_swap_chain->Present(0, 0));
 
-        WaitForGpu();
-
         m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
+        Wait(m_buffer_fence_values[m_buffer_index]);
+    }
+
+    void OnDestroy() override
+    {
+        Flush();
     }
 
 private:
@@ -133,8 +147,12 @@ private:
         queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 
         ThrowIfFailed(m_device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&m_queue)));
-        ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_command_allocator)));
-        ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_command_allocator.Get(), nullptr, IID_PPV_ARGS(&m_command_list)));
+
+        for (UINT i = 0; i < s_back_buffer_count; ++i) {
+            ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_command_allocators[i])));
+        }
+
+        ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_command_allocators.front().Get(), nullptr, IID_PPV_ARGS(&m_command_list)));
         ThrowIfFailed(m_command_list->Close());
     }
 
@@ -154,6 +172,8 @@ private:
         swap_chain_desc.SampleDesc.Count = 1;
         ThrowIfFailed(m_factory->CreateSwapChainForHwnd(m_queue.Get(), window_handle, &swap_chain_desc, nullptr, nullptr, &swap_chain));
         ThrowIfFailed(swap_chain.As(&m_swap_chain));
+
+        m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
     }
 
     void InitRtvDescriptorHeap()
@@ -248,28 +268,37 @@ private:
         m_vertex_buffer_view.SizeInBytes = data_size;
         m_vertex_buffer_view.StrideInBytes = sizeof(Vertex);
 
-        m_command_list->Reset(m_command_allocator.Get(), nullptr);
+        m_command_list->Reset(m_command_allocators[m_buffer_index].Get(), nullptr);
         m_command_list->CopyResource(m_vertex_buffer.Get(), upload_resource.Get());
-        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_vertex_buffer.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_vertex_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
         m_command_list->ResourceBarrier(1, &barrier);
         m_command_list->Close();
 
         ID3D12CommandList* command_lists[] = { m_command_list.Get() };
         m_queue->ExecuteCommandLists(static_cast<UINT>(std::size(command_lists)), command_lists);
 
-        WaitForGpu();
+        Flush();
     }
 
-    void WaitForGpu()
+    uint64_t Signal()
     {
         ++m_fence_value;
-
         ThrowIfFailed(m_queue->Signal(m_fence.Get(), m_fence_value));
+        return m_fence_value;
+    }
 
-        if (m_fence->GetCompletedValue() < m_fence_value) {
-            ThrowIfFailed(m_fence->SetEventOnCompletion(m_fence_value, m_event));
+    void Wait(uint64_t value)
+    {
+        if (m_fence->GetCompletedValue() < value) {
+            ThrowIfFailed(m_fence->SetEventOnCompletion(value, m_event));
             WaitForSingleObject(m_event, INFINITE);
         }
+    }
+
+    void Flush()
+    {
+        auto value = Signal();
+        Wait(value);
     }
 
     void UpdateBackBufferViews()
@@ -289,8 +318,8 @@ private:
     ComPtr<ID3D12Device> m_device;
 
     ComPtr<ID3D12CommandQueue> m_queue;
-    ComPtr<ID3D12CommandAllocator> m_command_allocator;
     ComPtr<ID3D12GraphicsCommandList> m_command_list;
+    std::array<ComPtr<ID3D12CommandAllocator>, s_back_buffer_count> m_command_allocators;
 
     ComPtr<IDXGISwapChain3> m_swap_chain;
     std::array<ComPtr<ID3D12Resource>, s_back_buffer_count> m_back_buffers;
@@ -303,6 +332,7 @@ private:
     ComPtr<ID3D12PipelineState> m_pipeline_state;
 
     ComPtr<ID3D12Fence> m_fence;
+    std::array<uint64_t, s_back_buffer_count> m_buffer_fence_values = {};
     uint64_t m_fence_value = 0;
     HANDLE m_event = nullptr;
 
