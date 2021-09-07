@@ -8,6 +8,7 @@
 #include <Windows.h>
 
 #include <array>
+#include <sstream>
 #include <stdexcept>
 #include <algorithm>
 
@@ -24,18 +25,20 @@ std::string s_shader_code = R"(
 struct PSInput
 {
     float4 position : SV_POSITION;
+    float4 color : COLOR;
 };
 
-PSInput VSMain(float4 position : POSITION)
+PSInput VSMain(float4 position : POSITION, float4 color : COLOR)
 {
     PSInput result;
     result.position = position;
+    result.color = color;
     return result;
 }
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    return float4(0.90, 0.25, 0.09, 1.0);
+    return input.color;
 }
 )";
 
@@ -201,18 +204,12 @@ private:
 
     void InitGraphicsPipelineState()
     {
-        ComPtr<ID3DBlob> vertex_shader;
-        ThrowIfFailed(D3DCompile(s_shader_code.data(), s_shader_code.size(), nullptr, nullptr, nullptr, "VSMain", "vs_5_1", 0, 0, &vertex_shader, nullptr));
+        ComPtr<ID3DBlob> vertex_shader = CompileShader(s_shader_code, "VSMain", "vs_5_1");
+        ComPtr<ID3DBlob> pixel_shader = CompileShader(s_shader_code, "PSMain", "ps_5_1");
 
-        ComPtr<ID3DBlob> pixel_shader;
-        ThrowIfFailed(D3DCompile(s_shader_code.data(), s_shader_code.size(), nullptr, nullptr, nullptr, "PSMain", "ps_5_1", 0, 0, &pixel_shader, nullptr));
-
-        D3D12_INPUT_ELEMENT_DESC input_desc = {};
-        input_desc.SemanticName = "POSITION";
-        input_desc.SemanticIndex = 0;
-        input_desc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
-        input_desc.InputSlot = 0;
-        input_desc.InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
+        std::array<D3D12_INPUT_ELEMENT_DESC, 2> input_descs = {};
+        input_descs[0] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, position), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA };
+        input_descs[1] = { "COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, color),    D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA };
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
         desc.pRootSignature = m_root_signature.Get();
@@ -221,7 +218,7 @@ private:
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
         desc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
         desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        desc.InputLayout = { &input_desc, 1 };
+        desc.InputLayout = { input_descs.data(), static_cast<UINT>(std::size(input_descs)) };
         desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         desc.NumRenderTargets = 1;
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -237,16 +234,10 @@ private:
 
     void InitVertexBuffer()
     {
-        struct Vertex
-        {
-            float position[3];
-        };
-
-        std::array<Vertex, 3> vertices = {
-            Vertex{ 0.5f, -0.5f, 1.0f },
-            Vertex{ -0.5f, -0.5f, 1.0f },
-            Vertex{ 0.0f, 0.5f, 1.0f }
-        };
+        std::array<Vertex, 3> vertices = {};
+        vertices[0] = { { 0.5f, -0.5f, 1.0f }, { 0.00f, 0.66f, 1.00f } };
+        vertices[1] = { {-0.5f, -0.5f, 1.0f }, { 0.00f, 0.66f, 1.00f } };
+        vertices[2] = { { 0.0f,  0.5f, 1.0f }, { 0.61f, 0.53f, 1.00f } };
 
         const size_t data_size = sizeof(vertices);
 
@@ -280,6 +271,28 @@ private:
         Flush();
     }
 
+    ComPtr<ID3DBlob> CompileShader(const std::string& source, const std::string& entry_point, const std::string& compiler_target)
+    {
+        DWORD compilerFlags = 0;
+#ifdef _DEBUG
+        compilerFlags = D3DCOMPILE_DEBUG;
+#endif
+
+        ComPtr<ID3DBlob> shader;
+        ComPtr<ID3DBlob> error;
+        auto hr = D3DCompile(source.data(), source.size(), nullptr, nullptr, nullptr, entry_point.c_str(), compiler_target.c_str(), 0, 0, &shader, &error);
+
+        if (FAILED(hr)) {
+            std::wostringstream oss;
+            oss << "Compilation error: " << static_cast<char*>(error->GetBufferPointer()) << std::endl;
+            OutputDebugString(oss.str().c_str());
+        }
+
+        ThrowIfFailed(hr);
+
+        return shader;
+    }
+
     uint64_t Signal()
     {
         ++m_fence_value;
@@ -310,6 +323,13 @@ private:
             rtv_handle.Offset(1, m_rtv_descriptor_size);
         }
     }
+
+private:
+    struct Vertex
+    {
+        float position[3];
+        float color[3];
+    };
 
 private:
     static constexpr UINT s_back_buffer_count = 2;
