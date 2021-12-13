@@ -2,7 +2,7 @@
 
 #include <wrl.h>
 #include <d3dx12.h>
-#include <dxgi1_4.h>
+#include <dxgi1_5.h>
 #include <d3dcompiler.h>
 
 #include <Windows.h>
@@ -49,6 +49,7 @@ public:
         : ddn::Application(title, width, height)
     {
         InitDevice();
+        InitFeatures();
         InitCommandList();
         InitSwapChain();
         InitRtvDescriptorHeap();
@@ -97,18 +98,18 @@ public:
         const uint32_t width = window.GetWidth();
         const uint32_t height = window.GetHeight();
 
-        D3D12_VIEWPORT viewport = { 0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height) };
+        auto viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
         m_command_list->RSSetViewports(1, &viewport);
 
-        D3D12_RECT scissor_rect = { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
+        auto scissor_rect = CD3DX12_RECT(0, 0, static_cast<LONG>(width), static_cast<LONG>(height));
         m_command_list->RSSetScissorRects(1, &scissor_rect);
 
         auto barrier1 = CD3DX12_RESOURCE_BARRIER::Transition(back_buffer.Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
         m_command_list->ResourceBarrier(1, &barrier1);
 
-        const float color[4] = { 0.96f,  0.96f, 0.98f, 1.0f };
+        const std::array<float, 4> color = { 0.96f,  0.96f, 0.98f, 1.0f };
         CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle(m_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), m_buffer_index, m_rtv_descriptor_size);
-        m_command_list->ClearRenderTargetView(rtv_handle, color, 0, nullptr);
+        m_command_list->ClearRenderTargetView(rtv_handle, color.data(), 0, nullptr);
 
         m_command_list->SetGraphicsRootSignature(m_root_signature.Get());
         m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -121,12 +122,13 @@ public:
 
         m_command_list->Close();
 
-        ID3D12CommandList* command_lists[] = { m_command_list.Get() };
-        m_queue->ExecuteCommandLists(static_cast<UINT>(std::size(command_lists)), command_lists);
+        ID3D12CommandList* command_lists = m_command_list.Get();
+        m_queue->ExecuteCommandLists(1, &command_lists);
 
         m_buffer_fence_values[m_buffer_index] = Signal();
 
-        ThrowIfFailed(m_swap_chain->Present(0, 0));
+        UINT present_flags = m_is_tearing_supported ? DXGI_PRESENT_ALLOW_TEARING : 0;
+        m_swap_chain->Present(0, present_flags);
 
         m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
         Wait(m_buffer_fence_values[m_buffer_index]);
@@ -142,6 +144,13 @@ private:
     {
         ThrowIfFailed(CreateDXGIFactory2(0, IID_PPV_ARGS(&m_factory)));
         ThrowIfFailed(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
+    }
+
+    void InitFeatures()
+    {
+        BOOL allow_tearing = false;
+        HRESULT hr = m_factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allow_tearing, sizeof(allow_tearing));
+        m_is_tearing_supported = SUCCEEDED(hr) && allow_tearing;
     }
 
     void InitCommandList()
@@ -173,8 +182,11 @@ private:
         swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         swap_chain_desc.SampleDesc.Count = 1;
+        swap_chain_desc.Flags = m_is_tearing_supported ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
         ThrowIfFailed(m_factory->CreateSwapChainForHwnd(m_queue.Get(), window_handle, &swap_chain_desc, nullptr, nullptr, &swap_chain));
         ThrowIfFailed(swap_chain.As(&m_swap_chain));
+
+        ThrowIfFailed(m_factory->MakeWindowAssociation(window_handle, DXGI_MWA_NO_ALT_ENTER));
 
         m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
     }
@@ -265,8 +277,8 @@ private:
         m_command_list->ResourceBarrier(1, &barrier);
         m_command_list->Close();
 
-        ID3D12CommandList* command_lists[] = { m_command_list.Get() };
-        m_queue->ExecuteCommandLists(static_cast<UINT>(std::size(command_lists)), command_lists);
+        ID3D12CommandList* command_lists = m_command_list.Get();
+        m_queue->ExecuteCommandLists(1, &command_lists);
 
         Flush();
     }
@@ -327,14 +339,14 @@ private:
 private:
     struct Vertex
     {
-        float position[3];
-        float color[3];
+        std::array<float, 3> position;
+        std::array<float, 3> color;
     };
 
 private:
     static constexpr UINT s_back_buffer_count = 2;
 
-    ComPtr<IDXGIFactory4> m_factory;
+    ComPtr<IDXGIFactory5> m_factory;
     ComPtr<ID3D12Device> m_device;
 
     ComPtr<ID3D12CommandQueue> m_queue;
@@ -358,6 +370,8 @@ private:
 
     ComPtr<ID3D12Resource> m_vertex_buffer;
     D3D12_VERTEX_BUFFER_VIEW m_vertex_buffer_view = {};
+
+    bool m_is_tearing_supported = false;
 };
 
 int main()
