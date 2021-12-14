@@ -26,3 +26,8 @@ target_compile_definitions(${TARGET}
         UNICODE
         NOMINMAX
 )
+
+target_compile_features(${TARGET}
+    PRIVATE
+        cxx_std_17
+)
