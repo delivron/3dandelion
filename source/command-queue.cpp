@@ -1,0 +1,71 @@
+#include "command-queue.h"
+#include "utils.h"
+
+#include <algorithm>
+
+namespace ddn
+{
+
+CommandQueue::CommandQueue(ID3D12Device& device, D3D12_COMMAND_LIST_TYPE type)
+    : m_fence(device)
+{
+    D3D12_COMMAND_QUEUE_DESC queue_desc = {};
+    queue_desc.Type = type;
+    ValidateResult(device.CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&m_instance)));
+}
+
+ID3D12CommandQueue* CommandQueue::Get()
+{
+    return m_instance.Get();
+}
+
+void CommandQueue::Clear() noexcept
+{
+    std::lock_guard guard(m_mutex);
+    m_command_lists.clear();
+}
+
+void CommandQueue::Add(Microsoft::WRL::ComPtr<ID3D12CommandList> command_list) noexcept
+{
+    if (!command_list) {
+        return;
+    }
+
+    std::lock_guard guard(m_mutex);
+    m_command_lists.emplace_back(std::move(command_list));
+}
+
+void CommandQueue::Execute()
+{
+    std::lock_guard guard(m_mutex);
+
+    if (m_command_lists.empty()) {
+        return;
+    }
+
+    std::vector<ID3D12CommandList*> command_lists(m_command_lists.size());
+    std::transform(m_command_lists.cbegin(), m_command_lists.cend(), command_lists.begin(), [](const Microsoft::WRL::ComPtr<ID3D12CommandList>& command_list) {
+        return command_list.Get();
+    });
+
+    m_instance->ExecuteCommandLists(static_cast<UINT>(command_lists.size()), command_lists.data());
+}
+
+void CommandQueue::Signal(Fence& fence)
+{
+    fence.Signal(*m_instance.Get());
+}
+
+void CommandQueue::Wait(Fence& fence)
+{
+    fence.Wait(*m_instance.Get());
+}
+
+void CommandQueue::Flush()
+{
+    Signal(m_fence);
+    Wait(m_fence);
+    m_fence.Wait();
+}
+
+}  // namespace ddn

@@ -10,6 +10,8 @@ add_executable(${TARGET}
     application.cpp
     fence.h
     fence.cpp
+    command-queue.h
+    command-queue.cpp
 )
 
 target_include_directories(${TARGET}
