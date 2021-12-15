@@ -2,10 +2,14 @@ set(TARGET 3Dandelion)
 
 add_executable(${TARGET}
     main.cpp
+    utils.h
+    utils.cpp
     window.h
     window.cpp
     application.h
     application.cpp
+    fence.h
+    fence.cpp
 )
 
 target_include_directories(${TARGET}
