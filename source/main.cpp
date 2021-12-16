@@ -1,25 +1,17 @@
+#include "utils.h"
 #include "application.h"
 
-#include <wrl.h>
-#include <d3dx12.h>
-#include <dxgi1_5.h>
-#include <d3dcompiler.h>
+#include "swap-chain.h"
+#include "command-queue.h"
 
-#include <Windows.h>
+#include <d3dx12.h>
 
 #include <array>
-#include <sstream>
-#include <stdexcept>
-#include <algorithm>
+#include <vector>
+#include <memory>
 
+using namespace ddn;
 using namespace Microsoft::WRL;
-
-void ThrowIfFailed(HRESULT hr)
-{
-    if (FAILED(hr)) {
-        throw std::runtime_error("Invalid return value");
-    }
-}
 
 std::string s_shader_code = R"(
 struct PSInput
@@ -42,59 +34,38 @@ float4 PSMain(PSInput input) : SV_TARGET
 }
 )";
 
-class DandelionApp : public ddn::Application
+class DandelionApp : public Application
 {
 public:
     DandelionApp(const std::wstring& title, uint32_t width, uint32_t height)
-        : ddn::Application(title, width, height)
+        : Application(title, width, height)
     {
         InitDevice();
-        InitFeatures();
-        InitCommandList();
+        InitCommandQueue();
         InitSwapChain();
         InitRtvDescriptorHeap();
         InitRootSignature();
         InitGraphicsPipelineState();
-        InitFence();
         InitVertexBuffer();
-    }
-
-    ~DandelionApp()
-    {
-        if (m_event && m_event != INVALID_HANDLE_VALUE) {
-            CloseHandle(m_event);
-        }
     }
 
     void OnResize(uint32_t width, uint32_t height) override
     {
-        Flush();
-
-        width = std::max<uint32_t>(1, width);
-        height = std::max<uint32_t>(1, height);
-
-        for (auto& back_buffer : m_back_buffers) {
-            back_buffer.Reset();
-        }
-
-        DXGI_SWAP_CHAIN_DESC1 swap_chian_desc = {};
-        ThrowIfFailed(m_swap_chain->GetDesc1(&swap_chian_desc));
-        ThrowIfFailed(m_swap_chain->ResizeBuffers(swap_chian_desc.BufferCount, width, height, swap_chian_desc.Format, swap_chian_desc.Flags));
+        m_swap_chain->Resize(width, height);
 
         UpdateBackBufferViews();
-
-        m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
     }
 
     void OnUpdate() override
     {
-        ComPtr<ID3D12Resource> back_buffer = m_back_buffers[m_buffer_index];
+        const auto buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
+        ComPtr<ID3D12Resource> back_buffer = m_swap_chain->GetCurrentBackBuffer();
 
-        ID3D12CommandAllocator* command_allocator = m_command_allocators[m_buffer_index].Get();
-        ThrowIfFailed(command_allocator->Reset());
-        ThrowIfFailed(m_command_list->Reset(command_allocator, m_pipeline_state.Get()));
+        ID3D12CommandAllocator* command_allocator = m_command_allocators[buffer_index].Get();
+        ValidateResult(command_allocator->Reset());
+        ValidateResult(m_command_list->Reset(command_allocator, m_pipeline_state.Get()));
 
-        const ddn::Window& window = GetWindow();
+        const Window& window = GetWindow();
         const uint32_t width = window.GetWidth();
         const uint32_t height = window.GetHeight();
 
@@ -108,13 +79,13 @@ public:
         m_command_list->ResourceBarrier(1, &barrier1);
 
         const std::array<float, 4> color = { 0.96f,  0.96f, 0.98f, 1.0f };
-        CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle(m_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), m_buffer_index, m_rtv_descriptor_size);
+        CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle(m_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), buffer_index, m_rtv_descriptor_size);
         m_command_list->ClearRenderTargetView(rtv_handle, color.data(), 0, nullptr);
 
         m_command_list->SetGraphicsRootSignature(m_root_signature.Get());
         m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_command_list->IASetVertexBuffers(0, 1, &m_vertex_buffer_view);
-        m_command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, nullptr);
+        m_command_list->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
         m_command_list->DrawInstanced(3, 1, 0, 0);
 
         auto barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(back_buffer.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
@@ -122,81 +93,49 @@ public:
 
         m_command_list->Close();
 
-        ID3D12CommandList* command_lists = m_command_list.Get();
-        m_queue->ExecuteCommandLists(1, &command_lists);
+        m_command_queue->Clear();
+        m_command_queue->Add(m_command_list);
+        m_command_queue->Execute();
 
-        m_buffer_fence_values[m_buffer_index] = Signal();
-
-        UINT present_flags = m_is_tearing_supported ? DXGI_PRESENT_ALLOW_TEARING : 0;
-        m_swap_chain->Present(0, present_flags);
-
-        m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
-        Wait(m_buffer_fence_values[m_buffer_index]);
+        m_swap_chain->Present();
     }
 
     void OnDestroy() override
     {
-        Flush();
+        m_command_queue->Flush();
     }
 
 private:
     void InitDevice()
     {
-        ThrowIfFailed(CreateDXGIFactory2(0, IID_PPV_ARGS(&m_factory)));
-        ThrowIfFailed(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
+        m_factory = CreateFactory();
+        ValidateResult(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
     }
 
-    void InitFeatures()
+    void InitCommandQueue()
     {
-        BOOL allow_tearing = false;
-        HRESULT hr = m_factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allow_tearing, sizeof(allow_tearing));
-        m_is_tearing_supported = SUCCEEDED(hr) && allow_tearing;
-    }
+        m_command_queue = std::make_unique<CommandQueue>(*m_device.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
 
-    void InitCommandList()
-    {
-        D3D12_COMMAND_QUEUE_DESC queue_desc = {};
-        queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-
-        ThrowIfFailed(m_device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&m_queue)));
-
-        for (UINT i = 0; i < s_back_buffer_count; ++i) {
-            ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_command_allocators[i])));
+        m_command_allocators.resize(s_back_buffer_count);
+        for (auto& command_allocator : m_command_allocators) {
+            ValidateResult(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&command_allocator)));
         }
 
-        ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_command_allocators.front().Get(), nullptr, IID_PPV_ARGS(&m_command_list)));
-        ThrowIfFailed(m_command_list->Close());
+        ValidateResult(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_command_allocators.front().Get(), nullptr, IID_PPV_ARGS(&m_command_list)));
+        ValidateResult(m_command_list->Close());
     }
 
     void InitSwapChain()
     {
-        const ddn::Window& window = GetWindow();
-        const HWND window_handle = window.GetHandle();
-
-        ComPtr<IDXGISwapChain1> swap_chain;
-        DXGI_SWAP_CHAIN_DESC1 swap_chain_desc = {};
-        swap_chain_desc.BufferCount = s_back_buffer_count;
-        swap_chain_desc.Width = window.GetWidth();
-        swap_chain_desc.Height = window.GetHeight();
-        swap_chain_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-        swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-        swap_chain_desc.SampleDesc.Count = 1;
-        swap_chain_desc.Flags = m_is_tearing_supported ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
-        ThrowIfFailed(m_factory->CreateSwapChainForHwnd(m_queue.Get(), window_handle, &swap_chain_desc, nullptr, nullptr, &swap_chain));
-        ThrowIfFailed(swap_chain.As(&m_swap_chain));
-
-        ThrowIfFailed(m_factory->MakeWindowAssociation(window_handle, DXGI_MWA_NO_ALT_ENTER));
-
-        m_buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
+        m_swap_chain = std::make_unique<SwapChain>(*m_factory.Get(), *m_command_queue, GetWindow(), s_back_buffer_count);
     }
 
     void InitRtvDescriptorHeap()
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-        desc.NumDescriptors = s_back_buffer_count;
+        desc.NumDescriptors = m_swap_chain->GetBackBufferCount();
         desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        ThrowIfFailed(m_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_descriptor_heap)));
+        ValidateResult(m_device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_descriptor_heap)));
 
         m_rtv_descriptor_size = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
@@ -210,8 +149,8 @@ private:
 
         ComPtr<ID3DBlob> blob;
         ComPtr<ID3DBlob> error;
-        ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &error));
-        ThrowIfFailed(m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_root_signature)));
+        ValidateResult(D3DX12SerializeVersionedRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1_1, &blob, &error));
+        ValidateResult(m_device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_root_signature)));
     }
 
     void InitGraphicsPipelineState()
@@ -235,13 +174,7 @@ private:
         desc.NumRenderTargets = 1;
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.SampleDesc = { 1, 0 };
-        ThrowIfFailed(m_device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&m_pipeline_state)));
-    }
-
-    void InitFence()
-    {
-        ThrowIfFailed(m_device->CreateFence(m_fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
-        m_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        ValidateResult(m_device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&m_pipeline_state)));
     }
 
     void InitVertexBuffer()
@@ -256,82 +189,40 @@ private:
         ComPtr<ID3D12Resource> upload_resource;
         auto upload_heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
         auto upload_resource_desc = CD3DX12_RESOURCE_DESC::Buffer(data_size);
-        ThrowIfFailed(m_device->CreateCommittedResource(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_resource)));
+        ValidateResult(m_device->CreateCommittedResource(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_resource)));
 
         void* data = nullptr;
-        ThrowIfFailed(upload_resource->Map(0, &CD3DX12_RANGE(), &data));
+        ValidateResult(upload_resource->Map(0, &CD3DX12_RANGE(), &data));
         std::copy(vertices.cbegin(), vertices.cend(), static_cast<Vertex*>(data));
         upload_resource->Unmap(0, nullptr);
 
         auto gpu_heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
         auto gpu_resource_desc = CD3DX12_RESOURCE_DESC::Buffer(data_size);
-        ThrowIfFailed(m_device->CreateCommittedResource(&gpu_heap_properties, D3D12_HEAP_FLAG_NONE, &gpu_resource_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_vertex_buffer)));
+        ValidateResult(m_device->CreateCommittedResource(&gpu_heap_properties, D3D12_HEAP_FLAG_NONE, &gpu_resource_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_vertex_buffer)));
 
         m_vertex_buffer_view.BufferLocation = m_vertex_buffer->GetGPUVirtualAddress();
         m_vertex_buffer_view.SizeInBytes = data_size;
         m_vertex_buffer_view.StrideInBytes = sizeof(Vertex);
 
-        m_command_list->Reset(m_command_allocators[m_buffer_index].Get(), nullptr);
+        auto buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
+        m_command_list->Reset(m_command_allocators[buffer_index].Get(), nullptr);
         m_command_list->CopyResource(m_vertex_buffer.Get(), upload_resource.Get());
         auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_vertex_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
         m_command_list->ResourceBarrier(1, &barrier);
         m_command_list->Close();
 
-        ID3D12CommandList* command_lists = m_command_list.Get();
-        m_queue->ExecuteCommandLists(1, &command_lists);
-
-        Flush();
-    }
-
-    ComPtr<ID3DBlob> CompileShader(const std::string& source, const std::string& entry_point, const std::string& compiler_target)
-    {
-        DWORD compilerFlags = 0;
-#ifdef _DEBUG
-        compilerFlags = D3DCOMPILE_DEBUG;
-#endif
-
-        ComPtr<ID3DBlob> shader;
-        ComPtr<ID3DBlob> error;
-        auto hr = D3DCompile(source.data(), source.size(), nullptr, nullptr, nullptr, entry_point.c_str(), compiler_target.c_str(), 0, 0, &shader, &error);
-
-        if (FAILED(hr)) {
-            std::wostringstream oss;
-            oss << "Compilation error: " << static_cast<char*>(error->GetBufferPointer()) << std::endl;
-            OutputDebugString(oss.str().c_str());
-        }
-
-        ThrowIfFailed(hr);
-
-        return shader;
-    }
-
-    uint64_t Signal()
-    {
-        ++m_fence_value;
-        ThrowIfFailed(m_queue->Signal(m_fence.Get(), m_fence_value));
-        return m_fence_value;
-    }
-
-    void Wait(uint64_t value)
-    {
-        if (m_fence->GetCompletedValue() < value) {
-            ThrowIfFailed(m_fence->SetEventOnCompletion(value, m_event));
-            WaitForSingleObject(m_event, INFINITE);
-        }
-    }
-
-    void Flush()
-    {
-        auto value = Signal();
-        Wait(value);
+        m_command_queue->Clear();
+        m_command_queue->Add(m_command_list);
+        m_command_queue->Execute();
+        m_command_queue->Flush();
     }
 
     void UpdateBackBufferViews()
     {
-        CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle(m_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
-        for (UINT i = 0; i < s_back_buffer_count; ++i) {
-            ThrowIfFailed(m_swap_chain->GetBuffer(i, IID_PPV_ARGS(&m_back_buffers[i])));
-            m_device->CreateRenderTargetView(m_back_buffers[i].Get(), nullptr, rtv_handle);
+        auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
+        for (uint32_t i = 0; i < m_swap_chain->GetBackBufferCount(); ++i) {
+            auto back_buffer = m_swap_chain->GetBackBuffer(i);
+            m_device->CreateRenderTargetView(back_buffer.Get(), nullptr, rtv_handle);
             rtv_handle.Offset(1, m_rtv_descriptor_size);
         }
     }
@@ -344,18 +235,13 @@ private:
     };
 
 private:
-    static constexpr UINT s_back_buffer_count = 2;
+    static constexpr uint32_t s_back_buffer_count = 2;
 
     ComPtr<IDXGIFactory5> m_factory;
     ComPtr<ID3D12Device> m_device;
 
-    ComPtr<ID3D12CommandQueue> m_queue;
     ComPtr<ID3D12GraphicsCommandList> m_command_list;
-    std::array<ComPtr<ID3D12CommandAllocator>, s_back_buffer_count> m_command_allocators;
-
-    ComPtr<IDXGISwapChain3> m_swap_chain;
-    std::array<ComPtr<ID3D12Resource>, s_back_buffer_count> m_back_buffers;
-    UINT m_buffer_index = 0;
+    std::vector<ComPtr<ID3D12CommandAllocator>> m_command_allocators;
 
     ComPtr<ID3D12DescriptorHeap> m_descriptor_heap;
     UINT m_rtv_descriptor_size = 0;
@@ -363,15 +249,11 @@ private:
     ComPtr<ID3D12RootSignature> m_root_signature;
     ComPtr<ID3D12PipelineState> m_pipeline_state;
 
-    ComPtr<ID3D12Fence> m_fence;
-    std::array<uint64_t, s_back_buffer_count> m_buffer_fence_values = {};
-    uint64_t m_fence_value = 0;
-    HANDLE m_event = nullptr;
-
     ComPtr<ID3D12Resource> m_vertex_buffer;
     D3D12_VERTEX_BUFFER_VIEW m_vertex_buffer_view = {};
 
-    bool m_is_tearing_supported = false;
+    std::unique_ptr<CommandQueue> m_command_queue;
+    std::unique_ptr<SwapChain> m_swap_chain;
 };
 
 int main()
