@@ -89,7 +89,7 @@ void SwapChain::Resize(uint32_t width, uint32_t height)
 void SwapChain::Present()
 {
     auto index = GetCurrentBackBufferIndex();
-    m_back_buffers[index].fence_value = m_command_queue.Signal(m_fence);
+    m_back_buffers[index].fence_value = m_fence.Signal(m_command_queue);
 
     UINT present_flags = m_is_tearing_supported ? DXGI_PRESENT_ALLOW_TEARING : 0;
     m_instance->Present(0, present_flags);

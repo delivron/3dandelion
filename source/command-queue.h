@@ -26,9 +26,6 @@ public:
     void Clear() noexcept;
     void Add(Microsoft::WRL::ComPtr<ID3D12CommandList> command_list) noexcept;
     void Execute();
-
-    uint64_t Signal(Fence& fence);
-    void Wait(Fence& fence);
     void Flush();
 
 private:

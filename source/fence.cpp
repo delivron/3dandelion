@@ -50,7 +50,12 @@ void Fence::Wait(uint64_t value)
 
 void Fence::Wait(CommandQueue& command_queue)
 {
-    command_queue->Wait(m_instance.Get(), m_signaled_value);
+    Wait(command_queue, m_signaled_value);
+}
+
+void Fence::Wait(CommandQueue& command_queue, uint64_t value)
+{
+    command_queue->Wait(m_instance.Get(), value);
 }
 
 }  // namespace ddn

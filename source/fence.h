@@ -25,6 +25,7 @@ public:
     void Wait();
     void Wait(uint64_t value);
     void Wait(CommandQueue& command_queue);
+    void Wait(CommandQueue& command_queue, uint64_t value);
 
 private:
     Microsoft::WRL::ComPtr<ID3D12Fence> m_instance;

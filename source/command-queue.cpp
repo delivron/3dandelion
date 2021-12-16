@@ -61,20 +61,10 @@ void CommandQueue::Execute()
     m_instance->ExecuteCommandLists(static_cast<UINT>(command_lists.size()), command_lists.data());
 }
 
-uint64_t CommandQueue::Signal(Fence& fence)
-{
-    return fence.Signal(*this);
-}
-
-void CommandQueue::Wait(Fence& fence)
-{
-    fence.Wait(*this);
-}
-
 void CommandQueue::Flush()
 {
-    Signal(m_fence);
-    Wait(m_fence);
+    m_fence.Signal(*this);
+    m_fence.Wait(*this);
     m_fence.Wait();
 }
 
