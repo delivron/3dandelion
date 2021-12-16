@@ -14,9 +14,19 @@ CommandQueue::CommandQueue(ID3D12Device& device, D3D12_COMMAND_LIST_TYPE type)
     ValidateResult(device.CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&m_instance)));
 }
 
-ID3D12CommandQueue* CommandQueue::Get()
+ID3D12CommandQueue* CommandQueue::operator ->()
 {
     return m_instance.Get();
+}
+
+CommandQueue::operator ID3D12CommandQueue*()
+{
+    return m_instance.Get();
+}
+
+CommandQueue::operator ID3D12CommandQueue&()
+{
+    return *m_instance.Get();
 }
 
 void CommandQueue::Clear() noexcept
@@ -51,14 +61,14 @@ void CommandQueue::Execute()
     m_instance->ExecuteCommandLists(static_cast<UINT>(command_lists.size()), command_lists.data());
 }
 
-void CommandQueue::Signal(Fence& fence)
+uint64_t CommandQueue::Signal(Fence& fence)
 {
-    fence.Signal(*m_instance.Get());
+    return fence.Signal(*this);
 }
 
 void CommandQueue::Wait(Fence& fence)
 {
-    fence.Wait(*m_instance.Get());
+    fence.Wait(*this);
 }
 
 void CommandQueue::Flush()

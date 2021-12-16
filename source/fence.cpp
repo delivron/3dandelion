@@ -1,5 +1,6 @@
 #include "fence.h"
 #include "utils.h"
+#include "command-queue.h"
 
 namespace ddn
 {
@@ -17,34 +18,39 @@ Fence::~Fence()
     }
 }
 
-void Fence::Signal()
+uint64_t Fence::Signal()
 {
-    ++m_signaled_value;
-    ValidateResult(m_instance->Signal(m_signaled_value));
+    auto value = ++m_signaled_value;
+    ValidateResult(m_instance->Signal(value));
+    return value;
 }
 
-void Fence::Signal(ID3D12CommandQueue& command_queue)
+uint64_t Fence::Signal(CommandQueue& command_queue)
 {
-    ++m_signaled_value;
-    ValidateResult(command_queue.Signal(m_instance.Get(), m_signaled_value));
+    auto value = ++m_signaled_value;
+    ValidateResult(command_queue->Signal(m_instance.Get(), value));
+    return value;
 }
 
 void Fence::Wait()
 {
-    const auto signaled_value = m_signaled_value.load();
+    Wait(m_signaled_value);
+}
+
+void Fence::Wait(uint64_t value)
+{
     const auto current_value = m_instance->GetCompletedValue();
-    if (current_value >= signaled_value) {
+    if (current_value >= value) {
         return;
     }
 
-    ValidateResult(m_instance->SetEventOnCompletion(signaled_value, m_event));
+    ValidateResult(m_instance->SetEventOnCompletion(value, m_event));
     WaitForSingleObject(m_event, INFINITE);
 }
 
-
-void Fence::Wait(ID3D12CommandQueue& command_queue)
+void Fence::Wait(CommandQueue& command_queue)
 {
-    command_queue.Wait(m_instance.Get(), m_signaled_value);
+    command_queue->Wait(m_instance.Get(), m_signaled_value);
 }
 
 }  // namespace ddn

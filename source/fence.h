@@ -8,6 +8,8 @@
 namespace ddn
 {
 
+class CommandQueue;
+
 class Fence
 {
 public:
@@ -15,13 +17,14 @@ public:
     ~Fence();
 
     Fence(const Fence& other) = delete;
-    Fence& operator=(const Fence& other) = delete;
+    Fence& operator =(const Fence& other) = delete;
 
-    void Signal();
-    void Signal(ID3D12CommandQueue& command_queue);
+    uint64_t Signal();
+    uint64_t Signal(CommandQueue& command_queue);
 
     void Wait();
-    void Wait(ID3D12CommandQueue& command_queue);
+    void Wait(uint64_t value);
+    void Wait(CommandQueue& command_queue);
 
 private:
     Microsoft::WRL::ComPtr<ID3D12Fence> m_instance;

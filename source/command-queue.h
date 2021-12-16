@@ -17,15 +17,17 @@ public:
     CommandQueue(ID3D12Device& device, D3D12_COMMAND_LIST_TYPE type);
 
     CommandQueue(const CommandQueue& other) = delete;
-    CommandQueue& operator=(const CommandQueue& other) = delete;
+    CommandQueue& operator =(const CommandQueue& other) = delete;
 
-    ID3D12CommandQueue* Get();
+    ID3D12CommandQueue* operator ->();
+    operator ID3D12CommandQueue*();
+    operator ID3D12CommandQueue&();
 
     void Clear() noexcept;
     void Add(Microsoft::WRL::ComPtr<ID3D12CommandList> command_list) noexcept;
     void Execute();
 
-    void Signal(Fence& fence);
+    uint64_t Signal(Fence& fence);
     void Wait(Fence& fence);
     void Flush();
 
