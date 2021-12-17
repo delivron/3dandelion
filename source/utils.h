@@ -7,13 +7,14 @@
 #include <Windows.h>
 
 #include <string>
+#include <filesystem>
 
 namespace ddn
 {
 
 void ValidateResult(HRESULT hr);
 
-Microsoft::WRL::ComPtr<ID3DBlob> CompileShader(const std::string& source, const std::string& entry_point, const std::string& compiler_target);
+Microsoft::WRL::ComPtr<ID3DBlob> CompileShader(const std::filesystem::path& file_path, const std::string& entry_point, const std::string& compiler_target);
 
 Microsoft::WRL::ComPtr<IDXGIFactory5> CreateFactory();
 

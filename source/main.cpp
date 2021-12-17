@@ -14,27 +14,6 @@
 using namespace ddn;
 using namespace Microsoft::WRL;
 
-std::string s_shader_code = R"(
-struct PSInput
-{
-    float4 position : SV_POSITION;
-    float4 color : COLOR;
-};
-
-PSInput VSMain(float4 position : POSITION, float4 color : COLOR)
-{
-    PSInput result;
-    result.position = position;
-    result.color = color;
-    return result;
-}
-
-float4 PSMain(PSInput input) : SV_TARGET
-{
-    return input.color;
-}
-)";
-
 class DandelionApp : public Application
 {
 public:
@@ -156,8 +135,9 @@ private:
 
     void InitGraphicsPipelineState()
     {
-        ComPtr<ID3DBlob> vertex_shader = CompileShader(s_shader_code, "VSMain", "vs_5_1");
-        ComPtr<ID3DBlob> pixel_shader = CompileShader(s_shader_code, "PSMain", "ps_5_1");
+        const auto shader_path = std::filesystem::current_path() / "shaders" / "main.hlsl";
+        ComPtr<ID3DBlob> vertex_shader = CompileShader(shader_path, "VSMain", "vs_5_1");
+        ComPtr<ID3DBlob> pixel_shader = CompileShader(shader_path, "PSMain", "ps_5_1");
 
         std::array<D3D12_INPUT_ELEMENT_DESC, 2> input_descs = {};
         input_descs[0] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, position), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA };

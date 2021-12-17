@@ -33,14 +33,14 @@ void ValidateResult(HRESULT hr)
     }
 }
 
-ComPtr<ID3DBlob> CompileShader(const std::string& source, const std::string& entry_point, const std::string& compiler_target)
+ComPtr<ID3DBlob> CompileShader(const std::filesystem::path& file_path, const std::string& entry_point, const std::string& compiler_target)
 {
     ComPtr<ID3DBlob> shader;
     ComPtr<ID3DBlob> error;
     auto compiler_flags = CreateFlags<UINT>(0, D3DCOMPILE_DEBUG);
-    auto hr = D3DCompile(source.data(), source.size(), nullptr, nullptr, nullptr, entry_point.c_str(), compiler_target.c_str(), compiler_flags, 0, &shader, &error);
+    auto hr = D3DCompileFromFile(file_path.wstring().c_str(), nullptr, nullptr, entry_point.c_str(), compiler_target.c_str(), compiler_flags, 0, &shader, &error);
 
-    if (FAILED(hr)) {
+    if (FAILED(hr) && error) {
         std::wostringstream oss;
         oss << "Compilation error: " << static_cast<char*>(error->GetBufferPointer()) << std::endl;
         OutputDebugString(oss.str().c_str());

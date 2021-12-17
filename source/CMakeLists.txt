@@ -40,3 +40,8 @@ target_compile_features(${TARGET}
     PRIVATE
         cxx_std_17
 )
+
+add_custom_command(TARGET ${TARGET}
+    PRE_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/shaders" "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+)
