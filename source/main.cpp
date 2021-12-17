@@ -5,6 +5,7 @@
 #include "command-queue.h"
 
 #include <d3dx12.h>
+#include <glm/glm.hpp>
 
 #include <array>
 #include <vector>
@@ -230,8 +231,8 @@ private:
 private:
     struct Vertex
     {
-        std::array<float, 3> position;
-        std::array<float, 3> color;
+        glm::vec3 position;
+        glm::vec3 color;
     };
 
 private:

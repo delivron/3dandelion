@@ -23,9 +23,10 @@ target_include_directories(${TARGET}
 
 target_link_libraries(${TARGET}
     PRIVATE
-        dxgi.lib
-        d3d12.lib
-        d3dcompiler.lib
+        glm
+        dxgi
+        d3d12
+        d3dcompiler
 )
 
 target_compile_definitions(${TARGET}
