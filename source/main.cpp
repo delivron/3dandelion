@@ -27,6 +27,7 @@ public:
         InitRootSignature();
         InitGraphicsPipelineState();
         InitVertexBuffer();
+        InitIndexBuffer();
     }
 
     void OnResize(uint32_t width, uint32_t height) override
@@ -58,15 +59,16 @@ public:
         auto barrier1 = CD3DX12_RESOURCE_BARRIER::Transition(back_buffer.Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
         m_command_list->ResourceBarrier(1, &barrier1);
 
-        const std::array<float, 4> color = { 0.96f,  0.96f, 0.98f, 1.0f };
+        const std::array<float, 4> color = { 0.96f, 0.96f, 0.98f, 1.0f };
         CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle(m_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), buffer_index, m_rtv_descriptor_size);
         m_command_list->ClearRenderTargetView(rtv_handle, color.data(), 0, nullptr);
 
         m_command_list->SetGraphicsRootSignature(m_root_signature.Get());
         m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_command_list->IASetVertexBuffers(0, 1, &m_vertex_buffer_view);
+        m_command_list->IASetIndexBuffer(&m_index_buffer_view);
         m_command_list->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
-        m_command_list->DrawInstanced(3, 1, 0, 0);
+        m_command_list->DrawIndexedInstanced(3, 1, 0, 0, 0);
 
         auto barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(back_buffer.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
         m_command_list->ResourceBarrier(1, &barrier2);
@@ -167,28 +169,54 @@ private:
 
         const size_t data_size = sizeof(vertices);
 
-        ComPtr<ID3D12Resource> upload_resource;
-        auto upload_heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-        auto upload_resource_desc = CD3DX12_RESOURCE_DESC::Buffer(data_size);
-        ValidateResult(m_device->CreateCommittedResource(&upload_heap_properties, D3D12_HEAP_FLAG_NONE, &upload_resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_resource)));
+        ComPtr<ID3D12Resource> upload_resource = CreateBuffer(*m_device.Get(), data_size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
+
+        m_vertex_buffer = CreateBuffer(*m_device.Get(), data_size, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COPY_DEST);
+
+        m_vertex_buffer_view.BufferLocation = m_vertex_buffer->GetGPUVirtualAddress();
+        m_vertex_buffer_view.SizeInBytes = data_size;
+        m_vertex_buffer_view.StrideInBytes = sizeof(Vertex);
 
         void* data = nullptr;
         ValidateResult(upload_resource->Map(0, &CD3DX12_RANGE(), &data));
         std::copy(vertices.cbegin(), vertices.cend(), static_cast<Vertex*>(data));
         upload_resource->Unmap(0, nullptr);
 
-        auto gpu_heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        auto gpu_resource_desc = CD3DX12_RESOURCE_DESC::Buffer(data_size);
-        ValidateResult(m_device->CreateCommittedResource(&gpu_heap_properties, D3D12_HEAP_FLAG_NONE, &gpu_resource_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_vertex_buffer)));
-
-        m_vertex_buffer_view.BufferLocation = m_vertex_buffer->GetGPUVirtualAddress();
-        m_vertex_buffer_view.SizeInBytes = data_size;
-        m_vertex_buffer_view.StrideInBytes = sizeof(Vertex);
-
         auto buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
         m_command_list->Reset(m_command_allocators[buffer_index].Get(), nullptr);
         m_command_list->CopyResource(m_vertex_buffer.Get(), upload_resource.Get());
         auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_vertex_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+        m_command_list->ResourceBarrier(1, &barrier);
+        m_command_list->Close();
+
+        m_command_queue->Clear();
+        m_command_queue->Add(m_command_list);
+        m_command_queue->Execute();
+        m_command_queue->Flush();
+    }
+
+    void InitIndexBuffer()
+    {
+        const std::array<uint16_t, 3> indexes = { 0, 1, 2};
+        const size_t data_size = sizeof(indexes);
+
+        ComPtr<ID3D12Resource> upload_resource = CreateBuffer(*m_device.Get(), data_size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
+
+        m_index_buffer = CreateBuffer(*m_device.Get(), data_size, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_COPY_DEST);
+
+        m_index_buffer_view.BufferLocation = m_index_buffer->GetGPUVirtualAddress();
+        m_index_buffer_view.SizeInBytes = data_size;
+        m_index_buffer_view.Format = DXGI_FORMAT_R16_UINT;
+
+        void* data = nullptr;
+        ValidateResult(upload_resource->Map(0, &CD3DX12_RANGE(), &data));
+        std::copy(indexes.cbegin(), indexes.cend(), static_cast<uint16_t*>(data));
+        upload_resource->Unmap(0, nullptr);
+
+        auto buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
+        m_command_list->Reset(m_command_allocators[buffer_index].Get(), nullptr);
+        m_command_list->CopyResource(m_index_buffer.Get(), upload_resource.Get());
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_index_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
         m_command_list->ResourceBarrier(1, &barrier);
         m_command_list->Close();
 
@@ -232,6 +260,9 @@ private:
 
     ComPtr<ID3D12Resource> m_vertex_buffer;
     D3D12_VERTEX_BUFFER_VIEW m_vertex_buffer_view = {};
+
+    ComPtr<ID3D12Resource> m_index_buffer;
+    D3D12_INDEX_BUFFER_VIEW m_index_buffer_view = {};
 
     std::unique_ptr<CommandQueue> m_command_queue;
     std::unique_ptr<SwapChain> m_swap_chain;

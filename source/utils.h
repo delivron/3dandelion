@@ -20,4 +20,6 @@ Microsoft::WRL::ComPtr<IDXGIFactory5> CreateFactory();
 
 Microsoft::WRL::ComPtr<ID3D12Device> GetDevice(ID3D12DeviceChild& device_child);
 
+Microsoft::WRL::ComPtr<ID3D12Resource> CreateBuffer(ID3D12Device& device, uint64_t size, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_STATES initial_state);
+
 }  // namespace ddn

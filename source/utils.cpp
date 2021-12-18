@@ -1,5 +1,6 @@
 #include "utils.h"
 
+#include <d3dx12.h>
 #include <d3dcompiler.h>
 
 #include <sstream>
@@ -64,6 +65,15 @@ ComPtr<ID3D12Device> GetDevice(ID3D12DeviceChild& device_child)
     ComPtr<ID3D12Device> device;
     device_child.GetDevice(IID_PPV_ARGS(&device));
     return device;
+}
+
+Microsoft::WRL::ComPtr<ID3D12Resource> CreateBuffer(ID3D12Device& device, uint64_t size, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_STATES initial_state)
+{
+    ComPtr<ID3D12Resource> buffer;
+    auto heap_properties = CD3DX12_HEAP_PROPERTIES(heap_type);
+    auto desc = CD3DX12_RESOURCE_DESC::Buffer(size);
+    ValidateResult(device.CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &desc, initial_state, nullptr, IID_PPV_ARGS(&buffer)));
+    return buffer;
 }
 
 }  // namespace ddn
