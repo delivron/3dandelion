@@ -52,12 +52,36 @@ ComPtr<ID3DBlob> CompileShader(const std::filesystem::path& file_path, const std
     return shader;
 }
 
-ComPtr<IDXGIFactory5> CreateFactory()
+ComPtr<IDXGIFactory6> CreateFactory()
 {
-    ComPtr<IDXGIFactory5> factory;
+    ComPtr<IDXGIFactory6> factory;
     auto factory_flags = CreateFlags<UINT>(0, DXGI_CREATE_FACTORY_DEBUG);
     ValidateResult(CreateDXGIFactory2(factory_flags, IID_PPV_ARGS(&factory)));
     return factory;
+}
+
+ComPtr<IDXGIAdapter1> GetAdapter(IDXGIFactory6& factory, DXGI_GPU_PREFERENCE gpu_preference)
+{
+    ComPtr<IDXGIAdapter1> adapter;
+
+    for (UINT index = 0; factory.EnumAdapterByGpuPreference(index, gpu_preference, IID_PPV_ARGS(&adapter)) != DXGI_ERROR_NOT_FOUND; ++index) {
+        DXGI_ADAPTER_DESC1 desc = {};
+        auto hr = adapter->GetDesc1(&desc);
+        if (FAILED(hr)) {
+            continue;
+        }
+
+        if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+            continue;
+        }
+
+        hr = D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr);
+        if (SUCCEEDED(hr)) {
+            break;
+        }
+    }
+
+    return adapter;
 }
 
 ComPtr<ID3D12Device> GetDevice(ID3D12DeviceChild& device_child)

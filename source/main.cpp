@@ -91,7 +91,8 @@ private:
     void InitDevice()
     {
         m_factory = CreateFactory();
-        ValidateResult(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
+        auto adapter = GetAdapter(*m_factory.Get(), DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE);
+        ValidateResult(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device)));
     }
 
     void InitCommandQueue()
@@ -246,7 +247,7 @@ private:
 private:
     static constexpr uint32_t s_back_buffer_count = 2;
 
-    ComPtr<IDXGIFactory5> m_factory;
+    ComPtr<IDXGIFactory6> m_factory;
     ComPtr<ID3D12Device> m_device;
 
     ComPtr<ID3D12GraphicsCommandList> m_command_list;
