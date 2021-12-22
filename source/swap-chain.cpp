@@ -4,6 +4,7 @@
 #include "window.h"
 #include "command-queue.h"
 
+#include <utility>
 #include <exception>
 
 using namespace Microsoft::WRL;
@@ -75,6 +76,9 @@ ComPtr<ID3D12Resource> SwapChain::GetBackBuffer(uint32_t index)
 
 void SwapChain::Resize(uint32_t width, uint32_t height)
 {
+    width = std::max<uint32_t>(1, width);
+    height = std::max<uint32_t>(1, height);
+
     m_command_queue.Flush();
 
     ReleaseBackBuffers();

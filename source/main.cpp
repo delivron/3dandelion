@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "camera.h"
 #include "application.h"
 
 #include "swap-chain.h"
@@ -19,6 +20,11 @@ class DandelionApp : public Application
 public:
     DandelionApp(const std::wstring& title, uint32_t width, uint32_t height)
         : Application(title, width, height)
+        , m_camera([width, height]() {
+            auto camera = Camera(45.0f, static_cast<float>(width) / height, 0.1f, 100.0f);
+            camera.SetPosition(glm::vec3(0.0f, 0.0f, -2.0f));
+            return camera;
+        }())
     {
         InitDevice();
         InitCommandQueue();
@@ -32,6 +38,8 @@ public:
 
     void OnResize(uint32_t width, uint32_t height) override
     {
+        m_camera.SetAspect(static_cast<float>(width) / height);
+
         m_swap_chain->Resize(width, height);
 
         UpdateBackBufferViews();
@@ -64,6 +72,10 @@ public:
         m_command_list->ClearRenderTargetView(rtv_handle, color.data(), 0, nullptr);
 
         m_command_list->SetGraphicsRootSignature(m_root_signature.Get());
+
+        const auto camera_matrix = m_camera.GetProjectionViewMatrix();
+        m_command_list->SetGraphicsRoot32BitConstants(0, sizeof(glm::mat4) / sizeof(float), &camera_matrix, 0);
+
         m_command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         m_command_list->IASetVertexBuffers(0, 1, &m_vertex_buffer_view);
         m_command_list->IASetIndexBuffer(&m_index_buffer_view);
@@ -127,8 +139,11 @@ private:
 
     void InitRootSignature()
     {
+        CD3DX12_ROOT_PARAMETER1 parameter = {};
+        parameter.InitAsConstants(sizeof(glm::mat4) / sizeof(float), 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+
         CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC desc = {};
-        desc.Init_1_1(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+        desc.Init_1_1(1, &parameter, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
         ComPtr<ID3DBlob> blob;
         ComPtr<ID3DBlob> error;
@@ -164,9 +179,9 @@ private:
     void InitVertexBuffer()
     {
         std::array<Vertex, 3> vertices = {};
-        vertices[0] = { { 0.5f, -0.5f, 1.0f }, { 0.00f, 0.66f, 1.00f } };
-        vertices[1] = { {-0.5f, -0.5f, 1.0f }, { 0.00f, 0.66f, 1.00f } };
-        vertices[2] = { { 0.0f,  0.5f, 1.0f }, { 0.61f, 0.53f, 1.00f } };
+        vertices[0] = { { 0.5f, -0.5f, 0.0f }, { 0.00f, 0.66f, 1.00f } };
+        vertices[1] = { {-0.5f, -0.5f, 0.0f }, { 0.00f, 0.66f, 1.00f } };
+        vertices[2] = { { 0.0f,  0.5f, 0.0f }, { 0.61f, 0.53f, 1.00f } };
 
         const size_t data_size = sizeof(vertices);
 
@@ -178,16 +193,14 @@ private:
         m_vertex_buffer_view.SizeInBytes = data_size;
         m_vertex_buffer_view.StrideInBytes = sizeof(Vertex);
 
-        void* data = nullptr;
-        ValidateResult(upload_resource->Map(0, &CD3DX12_RANGE(), &data));
-        std::copy(vertices.cbegin(), vertices.cend(), static_cast<Vertex*>(data));
-        upload_resource->Unmap(0, nullptr);
+        D3D12_SUBRESOURCE_DATA subresource_data = {};
+        subresource_data.pData = vertices.data();
+        subresource_data.RowPitch = data_size;
+        subresource_data.SlicePitch = subresource_data.RowPitch;
 
         auto buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
         m_command_list->Reset(m_command_allocators[buffer_index].Get(), nullptr);
-        m_command_list->CopyResource(m_vertex_buffer.Get(), upload_resource.Get());
-        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_vertex_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-        m_command_list->ResourceBarrier(1, &barrier);
+        UpdateSubresources(m_command_list.Get(), m_vertex_buffer.Get(), upload_resource.Get(), 0, 0, 1, &subresource_data);
         m_command_list->Close();
 
         m_command_queue->Clear();
@@ -209,16 +222,14 @@ private:
         m_index_buffer_view.SizeInBytes = data_size;
         m_index_buffer_view.Format = DXGI_FORMAT_R16_UINT;
 
-        void* data = nullptr;
-        ValidateResult(upload_resource->Map(0, &CD3DX12_RANGE(), &data));
-        std::copy(indexes.cbegin(), indexes.cend(), static_cast<uint16_t*>(data));
-        upload_resource->Unmap(0, nullptr);
+        D3D12_SUBRESOURCE_DATA subresource_data = {};
+        subresource_data.pData = indexes.data();
+        subresource_data.RowPitch = data_size;
+        subresource_data.SlicePitch = subresource_data.RowPitch;
 
         auto buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
         m_command_list->Reset(m_command_allocators[buffer_index].Get(), nullptr);
-        m_command_list->CopyResource(m_index_buffer.Get(), upload_resource.Get());
-        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_index_buffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-        m_command_list->ResourceBarrier(1, &barrier);
+        UpdateSubresources(m_command_list.Get(), m_index_buffer.Get(), upload_resource.Get(), 0, 0, 1, &subresource_data);
         m_command_list->Close();
 
         m_command_queue->Clear();
@@ -267,6 +278,8 @@ private:
 
     std::unique_ptr<CommandQueue> m_command_queue;
     std::unique_ptr<SwapChain> m_swap_chain;
+
+    Camera m_camera;
 };
 
 int main()

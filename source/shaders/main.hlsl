@@ -4,10 +4,15 @@ struct PSInput
     float4 color : COLOR;
 };
 
+cbuffer ModelViewProjection : register(b0)
+{
+    float4x4 modelViewProjection;
+}
+
 PSInput VSMain(float4 position : POSITION, float4 color : COLOR)
 {
     PSInput result;
-    result.position = position;
+    result.position = mul(modelViewProjection, position);
     result.color = color;
     return result;
 }

@@ -14,6 +14,8 @@ add_executable(${TARGET}
     swap-chain.cpp
     command-queue.h
     command-queue.cpp
+    camera.h
+    camera.cpp
 )
 
 target_include_directories(${TARGET}
@@ -26,6 +28,7 @@ target_link_libraries(${TARGET}
         glm
         dxgi
         d3d12
+        dxguid
         d3dcompiler
 )
 
@@ -34,6 +37,7 @@ target_compile_definitions(${TARGET}
         _UNICODE
         UNICODE
         NOMINMAX
+        GLM_FORCE_LEFT_HANDED
 )
 
 target_compile_features(${TARGET}
