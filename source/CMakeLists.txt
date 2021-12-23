@@ -1,7 +1,15 @@
+###############################################################################
+# Executable
+
 set(TARGET 3Dandelion)
+
+set(SHADERS
+    shaders/main.hlsl
+)
 
 add_executable(${TARGET}
     main.cpp
+
     utils.h
     utils.cpp
     window.h
@@ -16,7 +24,13 @@ add_executable(${TARGET}
     command-queue.cpp
     camera.h
     camera.cpp
+
+    ${SHADERS}
 )
+
+foreach(SHADER ${SHADERS})
+    set_source_files_properties(${SHADER} PROPERTIES VS_TOOL_OVERRIDE "None")
+endforeach()
 
 target_include_directories(${TARGET}
     PUBLIC
@@ -45,6 +59,14 @@ target_compile_features(${TARGET}
         cxx_std_17
 )
 
-add_custom_command(TARGET ${TARGET}
-    PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E create_symlink "${CMAKE_CURRENT_SOURCE_DIR}/shaders" "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+###############################################################################
+# Custom Target
+
+set(HELPER_TARGET CopyShaders)
+
+add_custom_target(${HELPER_TARGET}
+    COMMAND ${CMAKE_COMMAND}
+    -E copy_directory ${CMAKE_CURRENT_LIST_DIR}/shaders ${CMAKE_CURRENT_BINARY_DIR}/shaders
+)
+
+add_dependencies(${TARGET} ${HELPER_TARGET})
