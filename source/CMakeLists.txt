@@ -32,18 +32,14 @@ foreach(SHADER ${SHADERS})
     set_source_files_properties(${SHADER} PROPERTIES VS_TOOL_OVERRIDE "None")
 endforeach()
 
-target_include_directories(${TARGET}
-    PUBLIC
-        ${EXTERNAL_DIR}/directx-headers/include/directx
-)
-
 target_link_libraries(${TARGET}
     PRIVATE
         glm
         dxgi
         d3d12
-        dxguid
         d3dcompiler
+        DirectX-Guids
+        DirectX-Headers
 )
 
 target_compile_definitions(${TARGET}

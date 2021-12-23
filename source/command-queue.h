@@ -3,7 +3,7 @@
 #include "fence.h"
 
 #include <wrl.h>
-#include <d3d12.h>
+#include <directx/d3dx12.h>
 
 #include <mutex>
 #include <vector>

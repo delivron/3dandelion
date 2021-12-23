@@ -5,8 +5,8 @@
 #include "swap-chain.h"
 #include "command-queue.h"
 
-#include <d3dx12.h>
 #include <glm/glm.hpp>
+#include <directx/d3dx12.h>
 
 #include <array>
 #include <vector>
