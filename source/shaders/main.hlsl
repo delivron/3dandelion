@@ -4,7 +4,7 @@ struct PSInput
     float4 color : COLOR;
 };
 
-cbuffer ModelViewProjection : register(b0)
+cbuffer camera : register(b0)
 {
     float4x4 modelViewProjection;
 }

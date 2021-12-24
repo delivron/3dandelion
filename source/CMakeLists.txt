@@ -25,6 +25,8 @@ add_executable(${TARGET}
     camera.h
     camera.cpp
     mesh.h
+    cube.h
+    cube.cpp
 
     ${SHADERS}
 )
