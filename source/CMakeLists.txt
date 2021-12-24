@@ -24,6 +24,7 @@ add_executable(${TARGET}
     command-queue.cpp
     camera.h
     camera.cpp
+    mesh.h
 
     ${SHADERS}
 )
@@ -52,7 +53,7 @@ target_compile_definitions(${TARGET}
 
 target_compile_features(${TARGET}
     PRIVATE
-        cxx_std_17
+        cxx_std_20
 )
 
 ###############################################################################
