@@ -27,6 +27,7 @@ add_executable(${TARGET}
     mesh.h
     cube.h
     cube.cpp
+    event-emitter.h
 
     ${SHADERS}
 )
