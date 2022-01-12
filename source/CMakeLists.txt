@@ -18,6 +18,8 @@ add_executable(${TARGET}
     application.cpp
     fence.h
     fence.cpp
+    keyboard.h
+    keyboard.cpp
     swap-chain.h
     swap-chain.cpp
     command-queue.h

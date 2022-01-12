@@ -45,16 +45,6 @@ void Window::Hide()
     ShowWindow(m_handle, SW_HIDE);
 }
 
-void Window::Subscribe(IWindowListener* listener)
-{
-    m_listener.store(listener);
-}
-
-void Window::Unsubscribe()
-{
-    m_listener.store(nullptr);
-}
-
 HWND Window::Create(const std::wstring& title, uint32_t width, uint32_t height)
 {
     const int screen_width = GetSystemMetrics(SM_CXSCREEN);
@@ -97,12 +87,6 @@ HWND Window::Create(const std::wstring& title, uint32_t width, uint32_t height)
 
 bool Window::ProcessMessage(UINT message, WPARAM w_param, LPARAM l_param)
 {
-    IWindowListener default_listener = {};
-    IWindowListener* listener = m_listener.load();
-    if (!listener) {
-        listener = &default_listener;
-    }
-
     switch (message)
     {
     case WM_SIZE:
@@ -111,17 +95,28 @@ bool Window::ProcessMessage(UINT message, WPARAM w_param, LPARAM l_param)
         GetClientRect(m_handle, &client_rect);
         m_width = client_rect.right - client_rect.left;
         m_height = client_rect.bottom - client_rect.top;
-        listener->OnResize(m_width, m_height);
+        Notify(&IWindowListener::OnResize, m_width, m_height);
         break;
     }
     case WM_PAINT:
     {
-        listener->OnUpdate();
+        Notify(&IWindowListener::OnUpdate);
+        Notify(&IWindowListener::OnRender);
+        break;
+    }
+    case WM_KEYDOWN:
+    {
+        Notify(&IWindowListener::OnKeyDown, static_cast<uint8_t>(w_param));
+        break;
+    }
+    case WM_KEYUP:
+    {
+        Notify(&IWindowListener::OnKeyUp, static_cast<uint8_t>(w_param));
         break;
     }
     case WM_DESTROY:
     {
-        listener->OnDestroy();
+        Notify(&IWindowListener::OnDestroy);
         PostQuitMessage(0);
         break;
     }

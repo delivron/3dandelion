@@ -6,23 +6,18 @@
 namespace ddn
 {
 
-Camera::Camera(float fov_y_deg, float aspect, float near_z, float far_z)
+Camera::Camera(uint32_t width, uint32_t height, float fov_y_deg, float near_z, float far_z)
     : m_fov_y_rad(glm::radians(fov_y_deg))
-    , m_aspect(aspect)
+    , m_aspect(static_cast<float>(width) / height)
     , m_near_z(near_z)
     , m_far_z(far_z)
     , m_position(0.0f)
 {
 }
 
-void Camera::SetAspect(float aspect)
+void Camera::OnResize(uint32_t width, uint32_t height)
 {
-    m_aspect = aspect;
-}
-
-float Camera::GetAspect() const
-{
-    return m_aspect;
+    m_aspect = static_cast<float>(width) / height;
 }
 
 void Camera::SetPosition(const glm::vec3& position)

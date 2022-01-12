@@ -1,6 +1,7 @@
 #pragma once
 
 #include "window.h"
+#include "keyboard.h"
 
 #include <memory>
 #include <string>
@@ -9,7 +10,8 @@
 namespace ddn
 {
 
-class Application : public IWindowListener
+class Application
+    : public IWindowListener
 {
 public:
     Application(std::unique_ptr<Window>&& window);
@@ -18,10 +20,14 @@ public:
     Window& GetWindow();
     const Window& GetWindow() const;
 
+    Keyboard& GetKeyboard();
+    const Keyboard& GetKeyboard() const;
+
     int Run();
 
 private:
     std::unique_ptr<Window> m_window;
+    Keyboard m_keyboard;
 };
 
 }  // namespace ddn

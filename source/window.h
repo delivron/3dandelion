@@ -1,5 +1,7 @@
 #pragma once
 
+#include "event-emitter.h"
+
 #include <Windows.h>
 
 #include <atomic>
@@ -14,10 +16,14 @@ class IWindowListener
 public:
     virtual void OnResize(uint32_t width, uint32_t height) {}
     virtual void OnUpdate() {}
+    virtual void OnRender() {}
     virtual void OnDestroy() {}
+    virtual void OnKeyDown(uint8_t key_code) {}
+    virtual void OnKeyUp(uint8_t key_code) {}
 };
 
 class Window
+    : public EventEmitter<IWindowListener>
 {
 public:
     Window(const std::wstring& title, uint32_t width, uint32_t height);
@@ -30,9 +36,6 @@ public:
     void Show();
     void Hide();
 
-    void Subscribe(IWindowListener* listener);
-    void Unsubscribe();
-
 private:
     HWND Create(const std::wstring& title, uint32_t width, uint32_t height);
     bool ProcessMessage(UINT message, WPARAM w_param, LPARAM l_param);
@@ -44,7 +47,6 @@ private:
     uint32_t m_width = 0;
     uint32_t m_height = 0;
     HWND m_handle = nullptr;
-    std::atomic<IWindowListener*> m_listener = nullptr;
 };
 
 }  // namespace ddn

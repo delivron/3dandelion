@@ -6,6 +6,7 @@ namespace ddn
 Application::Application(std::unique_ptr<Window>&& window)
     : m_window(std::move(window))
 {
+    m_window->Subscribe(&m_keyboard);
     m_window->Subscribe(this);
     m_window->Show();
 }
@@ -23,6 +24,16 @@ Window& Application::GetWindow()
 const Window& Application::GetWindow() const
 {
     return *m_window;
+}
+
+Keyboard& Application::GetKeyboard()
+{
+    return m_keyboard;
+}
+
+const Keyboard& Application::GetKeyboard() const
+{
+    return m_keyboard;
 }
 
 int Application::Run()

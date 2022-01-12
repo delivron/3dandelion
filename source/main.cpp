@@ -25,12 +25,14 @@ public:
     DandelionApp(const std::wstring& title, uint32_t width, uint32_t height)
         : Application(title, width, height)
         , m_camera([width, height]() {
-            auto camera = Camera(45.0f, static_cast<float>(width) / height, 0.1f, 100.0f);
+            auto camera = Camera(width, height, 45.0f, 0.1f, 100.0f);
             camera.SetPosition(glm::vec3(0.0f, 0.0f, -10.0));
             return camera;
         }())
         , m_model_matrix(1.0f)
     {
+        GetWindow().Subscribe(&m_camera);
+
         InitDevice();
         InitCommandQueue();
         InitSwapChain();
@@ -46,8 +48,6 @@ public:
 
     void OnResize(uint32_t width, uint32_t height) override
     {
-        m_camera.SetAspect(static_cast<float>(width) / height);
-
         m_swap_chain->Resize(width, height);
 
         UpdateBackBufferViews();
@@ -61,8 +61,25 @@ public:
         auto delta_angle = glm::radians(s_angular_rate_deg * delta_time_s.count());
         m_model_matrix = glm::rotate(m_model_matrix, delta_angle, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        m_last_time = std::chrono::steady_clock::now();
+        auto move_y = [this, delta_time_s](float delta_y) {
+            auto position = m_camera.GetPosition();
+            position.y += delta_y;
+            m_camera.SetPosition(position);
+        };
 
+        auto& keyboard = GetKeyboard();
+        if (keyboard.IsKeyPressed('W')) {
+            move_y(s_movement_speed * delta_time_s.count());
+        }
+        if (keyboard.IsKeyPressed('S')) {
+            move_y(-s_movement_speed * delta_time_s.count());
+        }
+
+        m_last_time = time;
+    }
+
+    void OnRender() override
+    {
         const auto buffer_index = m_swap_chain->GetCurrentBackBufferIndex();
         ComPtr<ID3D12Resource> back_buffer = m_swap_chain->GetCurrentBackBuffer();
 
@@ -294,6 +311,7 @@ private:
 private:
     static constexpr uint32_t s_back_buffer_count = 2;
     static constexpr float s_angular_rate_deg = 45.0;
+    static constexpr float s_movement_speed = 10.0;
 
     ComPtr<IDXGIFactory6> m_factory;
     ComPtr<ID3D12Device> m_device;

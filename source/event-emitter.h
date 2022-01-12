@@ -34,7 +34,7 @@ protected:
     {
         std::lock_guard guard(m_mutex);
         for (auto* listener : m_listeners) {
-            (listener->*callback)(args...);
+            (listener->*callback)(std::forward<Args>(args)...);
         }
     }
 
